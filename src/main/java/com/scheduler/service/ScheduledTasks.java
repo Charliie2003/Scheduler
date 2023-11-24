@@ -9,8 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -18,16 +18,31 @@ public class ScheduledTasks {
     @Autowired
     private UserService userService;
 
-    @Scheduled(cron = "0 * * * * *") // Cron expression para ejecutarse cada 5 minutos
+    private static int writeToExcelCount = 0;
+
+    @Scheduled(cron = "0 * * * * *") // Se ejecuta cada minuto
     public void execute() {
-        List<User> users = userService.findAllUsers(); // Obtiene los usuarios de MongoDB
-        writeToExcel(users); // Escribe los usuarios en un archivo Excel
+        if (writeToExcelCount < 2) {
+            List<User> users = userService.findAllUsers();
+            writeToExcel(users);
+            writeToExcelCount++;
+        }
     }
 
-    private void writeToExcel(List<User>users){
-        String excelFilePath= "users.xlsx";
+    @Scheduled(cron = "0 0/2 * * * *") // Se ejecuta cada 2 minutos
+    public void appendLatestUsers() {
+        if (writeToExcelCount >= 2) {
+            List<User> newUsers = filterNewUsers(userService.findAllUsers());
+            if (!newUsers.isEmpty()) {
+                appendLatestUsersToExcel(newUsers);
+            }
+        }
+    }
 
-        try (Workbook workbook = new XSSFWorkbook(); FileOutputStream outputStream = new FileOutputStream(excelFilePath)){
+    private void writeToExcel(List<User> users) {
+        String excelFilePath = "users.xlsx";
+
+        try (Workbook workbook = new XSSFWorkbook(); FileOutputStream outputStream = new FileOutputStream(excelFilePath)) {
             Sheet sheet = workbook.createSheet("Users");
 
             int rowCount = 0;
@@ -47,22 +62,23 @@ public class ScheduledTasks {
             header.createCell(10).setCellValue("Money");
 
             //Escribir los datos de usario
-            for(User user : users){
+            for (User user : users) {
                 Row row = sheet.createRow(rowCount++);
                 writeUser(user, row);
             }
 
             //Ajustar el tamaño de las columnas
-            for(int i = 0; i< 11; i++){
+            for (int i = 0; i < 11; i++) {
                 sheet.autoSizeColumn(i);
             }
 
             workbook.write(outputStream);
 
-        }catch (IOException e){
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
+
     private void writeUser(User user, Row row) {
         row.createCell(0).setCellValue(user.getId());
         row.createCell(1).setCellValue(user.getFirst_name());
@@ -75,6 +91,58 @@ public class ScheduledTasks {
         row.createCell(8).setCellValue(String.join(", ", user.getPhysical_features()));
         row.createCell(9).setCellValue(user.getBirth_date().toString());
         row.createCell(10).setCellValue(user.getMoney());
+    }
+
+    private boolean isUserInExcel(User user, Sheet sheet) {
+        for (Row row : sheet) {
+            if (row.getCell(0).getStringCellValue().equals(user.getId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    private List<User> filterNewUsers(List<User> users) {
+        String excelFilePath = "users.xlsx";
+        List<User> newUsers = new ArrayList<>();
+        try (Workbook workbook = new XSSFWorkbook(new FileInputStream(excelFilePath))) {
+            for(User user: users){
+                Sheet sheet = workbook.getSheetAt(0);
+                if (!isUserInExcel(user, sheet)) {
+                    newUsers.add(user);
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return newUsers;
+
+
+    }
+    private void appendLatestUsersToExcel(List<User> users) {
+        String excelFilePath = "users.xlsx";
+
+        try (FileInputStream inputStream = new FileInputStream(new File(excelFilePath));
+             Workbook workbook = new XSSFWorkbook(inputStream);
+             FileOutputStream outputStream = new FileOutputStream(excelFilePath)) {
+
+            Sheet sheet = workbook.getSheetAt(0);
+            int rowCount = sheet.getLastRowNum() + 1;
+
+            for (User user : users) {
+                Row row = sheet.createRow(rowCount++);
+                writeUser(user, row);
+            }
+
+            for (int i = 0; i < 11; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            workbook.write(outputStream);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
 
