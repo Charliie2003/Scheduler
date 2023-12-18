@@ -25,62 +25,67 @@ import java.util.stream.IntStream;
 @Component
 public class ScheduledTasks {
     @Autowired
-    private UserService userService;
-    final private ThreadLocal<LocalDateTime> startTime = new ThreadLocal<>();
+    public UserService userService;
 
 
-    String excelFilePath = "users_" + LocalDate.now() + ".xlsx";
+    String excelFilePath = "users.xlsx";
 
-    @Scheduled(cron = "0 0 0 * * *") // Se ejecuta cada día
-    public void execute() {
-
-        startTime.set(LocalDateTime.now());
-        System.out.println("Ejecución de execute: " + startTime.get().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+    @Scheduled(cron = "0 */3 * * * *") // Se ejecuta cada 3 minutos
+    public void execute() throws IOException {
+        long startTime = System.currentTimeMillis();
+        System.out.println("Ejecución de execute: " + LocalDateTime.now());
         List<User> users = userService.findAllUsers();
         writeToExcel(users, excelFilePath); // Nombre del archivo con fecha
+        long endTime = System.currentTimeMillis();
+        long duration = endTime - startTime;
+        System.out.println("Duración del proceso execute() en milisegundos " + duration + " ms");
 
 
     }
 
     @Scheduled(cron = "0 0/2 * * * *") // Se ejecuta cada 2 minutos
-    public void appendLatestUsers() {
+    public void appendLastestUsers() throws IOException {
 
-        startTime.set(LocalDateTime.now());
-        System.out.println("Ejecución de appendLatestUsers: " + startTime.get().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        long startTime = System.currentTimeMillis();
 
-        List<User> newUsers = filterNewUsers(userService.findAllUsers(), excelFilePath);
+        System.out.println("Ejecución de appendLatestUsers: " + LocalDateTime.now());
+
+        List<User> newUsers = filterNewUsers(userService.findAllUsers(), "lastest_users.xlsx");
+
         if (!newUsers.isEmpty()) {
-            String sourceFilePath = excelFilePath;
-            String destFilePath = "latest_users_" + LocalDate.now() + ".xlsx";
-            String destFilePathLambda = "lambda_last_users" + LocalDate.now() + ".xlsx";
-            copyFile(sourceFilePath, destFilePath); // Copiar el archivo original al nuevo destino
-            copyFile(sourceFilePath, destFilePathLambda);//Copiar el archivo para el lambda
-            appendLatestUsersToExcel(newUsers, destFilePath); // Aplicar append en el nuevo archivo
-            appendLastUserToExcelLambda(newUsers, destFilePathLambda);
+            appendLatestUsersToExcel(newUsers, "lastest_users.xlsx"); // Aplicar append en el nuevo archivo
         }
-
-
+        long endTime = System.currentTimeMillis();
+        long duration = endTime - startTime;
+        System.out.println("Duración del proceso appendLatestUsers()  " + duration + " ms");
     }
 
-    private void copyFile(String sourceFilePath, String destFilePath) {
-        try {
-            Files.copy(Paths.get(sourceFilePath), Paths.get(destFilePath), StandardCopyOption.REPLACE_EXISTING);
-        } catch (FileSystemException e) {
-            if (e.getFile().equals(destFilePath) && e.getOtherFile() == null && e.getReason().contains("otro proceso")) {
-                System.out.println("El archivo Excel " + destFilePath + " está siendo utilizado por otro proceso. No se puede ejecutar el proceso.");
-                // Aquí puedes decidir qué hacer si el archivo está en uso
+    @Scheduled(cron = "0 0/2 * * * *") // Se ejecuta cada 2 minutos
+    public void appendLastestUserLambda() {
+        Runnable task = () -> {
+            try {
+                long startTime = System.currentTimeMillis();
+                System.out.println("Ejecución de appendLatestUsersLambda: " + LocalDateTime.now());
+                List<User> newUsers = filterNewUsers(userService.findAllUsers(), "lastest_users_lambda.xlsx");
+                if (!newUsers.isEmpty()) {
+                    appendLastUserToExcelLambda(newUsers, "lastest_users_lambda.xlsx"); // Aplicar append en el nuevo archivo
+
+                }
+                long endTime = System.currentTimeMillis();
+                long duration = endTime - startTime;
+                System.out.println("Duración del proceso appendLatestUsersLambda() " + duration + " ms");
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-        } catch (IOException e) {
-            System.out.println("Ocurrió un error al copiar el archivo: " + e.getMessage());
-            e.printStackTrace();
-        }
+        };
+
+        task.run();
     }
 
-    private void writeToExcel(List<User> users, String excelFilePath) {
 
+    public void writeToExcel(List<User> users, String excelFilePath) throws IOException {
         try (Workbook workbook = new XSSFWorkbook(); FileOutputStream outputStream = new FileOutputStream(excelFilePath)) {
             Sheet sheet = workbook.createSheet("Users");
-
             int rowCount = 0;
 
             //Crear encabezado
@@ -102,16 +107,12 @@ public class ScheduledTasks {
                 Row row = sheet.createRow(rowCount++);
                 writeUser(user, row);
             }
-
             //Ajustar el tamaño de las columnas
             for (int i = 0; i < 11; i++) {
                 sheet.autoSizeColumn(i);
             }
-
             workbook.write(outputStream);
 
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
@@ -129,7 +130,7 @@ public class ScheduledTasks {
         row.createCell(10).setCellValue(user.getMoney());
     }
 
-    private boolean isUserInExcel(User user, Sheet sheet) {
+    public boolean isUserInExcel(User user, Sheet sheet) {
         for (Row row : sheet) {
             if (row.getCell(0).getStringCellValue().equals(user.getId())) {
                 return true;
@@ -138,8 +139,7 @@ public class ScheduledTasks {
         return false;
     }
 
-
-    private List<User> filterNewUsers(List<User> users, String excelFilePath) {
+    public List<User> filterNewUsers(List<User> users, String excelFilePath) throws IOException {
         List<User> newUsers = new ArrayList<>();
         try (Workbook workbook = new XSSFWorkbook(new FileInputStream(excelFilePath))) {
             for (User user : users) {
@@ -150,18 +150,14 @@ public class ScheduledTasks {
             }
         } catch (FileNotFoundException e) {
             System.out.println("Archivo no encontrado, creando uno nuevo: " + e.getMessage());
-            execute();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+            List<User> allUsers = userService.findAllUsers();
+            writeToExcel(allUsers, excelFilePath);
         }
         return newUsers;
-
-
     }
 
-    private void appendLatestUsersToExcel(List<User> users, String excelFilePath) {
-
-        try (FileInputStream inputStream = new FileInputStream(new File(excelFilePath));
+    public void appendLatestUsersToExcel(List<User> users, String excelFilePath) throws IOException {
+        try (FileInputStream inputStream = new FileInputStream((excelFilePath));
              Workbook workbook = new XSSFWorkbook(inputStream);
              FileOutputStream outputStream = new FileOutputStream(excelFilePath)) {
 
@@ -178,15 +174,13 @@ public class ScheduledTasks {
             }
             workbook.write(outputStream);
         } catch (FileNotFoundException e) {
-            System.out.println("El archivo " + excelFilePath + "  se puede abrir porque está siendo utilizado por otro proceso.");
-
-        } catch (IOException e) {
-            e.printStackTrace();
+            System.out.println("El archivo " + excelFilePath + " no se puede abrir porque está siendo utilizado por otro proceso.");
         }
     }
 
-    private void appendLastUserToExcelLambda(List<User> users, String excelFilePath) {
-        try (FileInputStream inputStream = new FileInputStream(new File(excelFilePath));
+
+    public void appendLastUserToExcelLambda(List<User> users, String excelFilePath) throws IOException {
+        try (FileInputStream inputStream = new FileInputStream((excelFilePath));
              Workbook workbook = new XSSFWorkbook(inputStream);
              FileOutputStream outputStream = new FileOutputStream(excelFilePath)) {
 
@@ -204,8 +198,6 @@ public class ScheduledTasks {
         } catch (FileNotFoundException e) {
             System.out.println("El archivo " + excelFilePath + " no se puede abrir porque está siendo utilizado por otro proceso.");
 
-        } catch (IOException e) {
-            e.printStackTrace();
         }
 
     }
