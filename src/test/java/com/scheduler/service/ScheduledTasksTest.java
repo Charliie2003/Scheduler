@@ -74,7 +74,7 @@ class ScheduledTasksTest {
         when(scheduledTasks.filterNewUsers(newUsers, "C:/Users/Charlie/Desktop/proyectos Accenture/Scheduler/users.xlsx")).thenReturn(newUsers);
 
         // Ejecuta el método
-        scheduledTasks.appendLatestUsers();
+        scheduledTasks.appendLastestUsers();
 
 
 
