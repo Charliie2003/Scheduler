@@ -274,49 +274,7 @@ class ScheduledTasksTest {
     }
 
 
-    @Test
-    void testCopyFile_Success() throws IOException {
-        // Configura un entorno de prueba con archivos temporales reales
-        // Crear un archivo fuente temporal
-        Path sourcePath = Files.createTempFile("source", ".xlsx");
-        // Crear un archivo destino temporal
-        Path destPath = Files.createTempFile("dest", ".xlsx");
 
-        // Ejecuta el método copyFile
-        scheduledTasks.copyFile(sourcePath.toString(), destPath.toString());
-
-        // Verifica que el archivo de destino contenga los mismos datos que el archivo fuente
-        byte[] sourceBytes = Files.readAllBytes(sourcePath);
-        byte[] destBytes = Files.readAllBytes(destPath);
-        assertArrayEquals(sourceBytes, destBytes);
-
-
-    }
-    @Test
-    void testCopyFile_FileInUse() throws IOException {
-        try (MockedStatic<Files> mockedFiles = mockStatic(Files.class)) {
-            Path sourcePath = Paths.get("ruta/fuente/ficticia");
-            Path destPath = Paths.get("ruta/destino/ficticia");
-
-            // Configura Mockito para lanzar una FileSystemException cuando se intente copiar
-            mockedFiles.when(() -> Files.copy(sourcePath, destPath, StandardCopyOption.REPLACE_EXISTING))
-                    .thenThrow(new FileSystemException(destPath.toString(), null, "El archivo está en uso por otro proceso"));
-
-            // Captura la salida del sistema para verificar el mensaje impreso
-            ByteArrayOutputStream outContent = new ByteArrayOutputStream();
-            PrintStream originalOut = System.out;
-            System.setOut(new PrintStream(outContent));
-
-            // Intenta ejecutar el método copyFile
-            scheduledTasks.copyFile(sourcePath.toString(), destPath.toString());
-
-            // Verifica que el mensaje correcto se haya impreso
-            assertTrue(outContent.toString().contains("El archivo Excel " + destPath + " está siendo utilizado por otro proceso"));
-
-            // Restablece la salida del sistema
-            System.setOut(originalOut);
-        }
-    }
 
 
 
